@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments / uv
+.venv/
+venv/
+.uv/
+
+# Analysis output
+output/
+*.pkl
+*.h5
+equilibria*.csv
+
+# OS
+.DS_Store

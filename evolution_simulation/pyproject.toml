@@ -1,0 +1,22 @@
+[project]
+name = "evolution-simulation"
+version = "1.0.0"
+description = "Agent-based evolutionary simulation of cooperation strategies in a public goods game"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    "numba>=0.58.0",
+    "pyarrow>=12.0.0",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

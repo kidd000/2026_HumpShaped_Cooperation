@@ -1,0 +1,5 @@
+# Core dependencies for the evolution simulation
+numpy>=1.24.0
+pandas>=2.0.0
+numba>=0.58.0
+pyarrow>=12.0.0   # Parquet output

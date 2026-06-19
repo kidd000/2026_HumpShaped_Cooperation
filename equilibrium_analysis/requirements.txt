@@ -1,0 +1,6 @@
+# Core dependencies for the equilibrium analysis
+numpy>=1.24.0
+pandas>=2.0.0
+numba>=0.58.0
+scipy>=1.10.0
+h5py>=3.8.0

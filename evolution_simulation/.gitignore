@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments / uv
+.venv/
+venv/
+.uv/
+
+# Simulation output
+output/
+*.parquet
+
+# OS
+.DS_Store

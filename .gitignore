@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+
+# uv
+uv.lock
+
+# Simulation / analysis outputs
+output/
+
+# OS / editor
+.DS_Store
+*.swp
+
+# Stray cache dirs (e.g. a literal "~" created by misconfigured HOME)
+~/
+.cache/
