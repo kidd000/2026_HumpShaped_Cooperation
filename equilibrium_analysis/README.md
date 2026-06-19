@@ -86,8 +86,7 @@ uv run python scripts/compute_critical_K_boundaries.py -o analytical_boundaries.
 Output CSV columns: `N, K_critical, edge_type` (`edge_type` is `AllC-AllD` or
 `AllC-Hump`).
 
-> No precomputed data is shipped; run the scripts above to regenerate it. The
-> final figure rendering (R/Python plotting) is not part of this release.
+> No precomputed data is shipped; run the scripts above to regenerate it.
 
 ---
 

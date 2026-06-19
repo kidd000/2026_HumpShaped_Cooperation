@@ -22,12 +22,11 @@ See each package's README for installation and usage.
 
 ## Reproducing the main-text figures
 
-The plotting and panel-assembly scripts (R and Python) are not part of this
-release. The sections below describe how the data behind each figure is
-produced from the packages above, so the figures can be reconstructed with any
-plotting tool. Figure 1 is a schematic and uses no data.
+The sections below describe how the data behind each figure is produced from
+the packages above, so the figures can be reconstructed with any plotting tool.
+Figure 1 is a schematic and uses no data.
 
-### Figure 2 -- evolutionary outcomes across the N x K space
+### Figure 2. Evolutionary outcomes across the N x K space
 
 Produced from `evolution_simulation`. Run the N x K sweep over group sizes
 `N = 3..16` and steepness `K = 1, 2, ..., 128` (`run_evolution_sweep.py`,
@@ -42,7 +41,7 @@ which feeds the three panels:
 - **C** -- heatmaps of the mean cooperation rate and of each strategy's
   steady-state frequency (CC, Hump, AllC, AllD) across `(N, K)`.
 
-### Figure 3 -- the effect of Hump on cooperation and fitness
+### Figure 3. The effect of Hump on cooperation and fitness
 
 Also from `evolution_simulation`, comparing the full four-strategy runs against
 three-strategy runs without Hump (`--no-hump`), at `K = 16` and `K = 1`:
@@ -52,7 +51,7 @@ three-strategy runs without Hump (`--no-hump`), at `K = 16` and `K = 1`:
 - **B** -- the steady-state strategy composition (stacked bars) as a function of
   `N`, with and without Hump.
 
-### Figure 4 -- the pivotal-AllC mechanism (analytical)
+### Figure 4. The pivotal-AllC mechanism (analytical)
 
 Produced from `equilibrium_analysis` at the representative analytical condition
 `N = 12`, the step-function production limit `K -> infinity`, and initial belief
@@ -65,5 +64,4 @@ Produced from `equilibrium_analysis` at the representative analytical condition
   containing AllC exist (the critical-`K` boundaries `K*(N)`), from
   `compute_critical_K_boundaries.py`.
 
-Both rest on the focal-player (pivotal) expected payoffs. The final figure
-rendering (R/Python plotting) is not part of this release.
+Both rest on the focal-player (pivotal) expected payoffs.
