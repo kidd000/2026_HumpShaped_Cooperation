@@ -57,12 +57,14 @@ def sigmoid_production(c: float, K: float, x0: float) -> float:
     float
         Normalized production value in [0, 1].
     """
-    # Handle K = infinity (step function)
+    # Handle K = infinity (step function); S(x0) = 1/2 per SI Eq. S3
     if np.isinf(K):
-        if c >= x0:
+        if c > x0:
             return 1.0
-        else:
+        elif c < x0:
             return 0.0
+        else:
+            return 0.5
 
     # Helper function to compute raw sigmoid with overflow protection
     def raw_sigmoid(x: float) -> float:

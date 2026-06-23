@@ -97,7 +97,7 @@ Provided for completeness; not needed to reproduce Figure 4.
 | Module | Role |
 |--------|------|
 | `simulation` | Production function, strategies, composition generation, within-group convergence, multinomial / focal expected payoffs, replicator dynamics |
-| `solver` | Root-finding for equilibria and Jacobian stability classification |
+| `solver` | Selection gradients, Jacobian-based stability classification, interior-equilibrium predicate |
 | `grid` | Parameter grid definitions |
 | `storage` | HDF5 storage for large equilibrium sweeps |
 

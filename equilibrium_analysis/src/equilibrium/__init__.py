@@ -92,9 +92,7 @@ from .storage import (
 # Solver exports
 from .solver import (
     compute_selection_gradients,
-    find_equilibria_3d,
     classify_equilibrium_jacobian,
-    compute_equilibria_for_params,
     is_interior_equilibrium,
 )
 
@@ -147,8 +145,6 @@ __all__ = [
     "open_store",
     # Solver
     "compute_selection_gradients",
-    "find_equilibria_3d",
     "classify_equilibrium_jacobian",
-    "compute_equilibria_for_params",
     "is_interior_equilibrium",
 ]

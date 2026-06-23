@@ -5,12 +5,15 @@ Critical-K boundaries K*(N) for the AllC-exploiter edges (Figure 4C).
 Computes, for each group size N, the critical production steepness K*(N) above
 which a polymorphic equilibrium containing AllC exists, for the two edges:
 
-  - AllC-AllD : the K -> infinity (step-function) pivotal condition.
+  - AllC-AllD : the smallest K (bisection over [1, 500]) admitting an interior
+    AllC-AllD equilibrium; existence is gated by the K -> infinity pivotal factor
+    MPCR * N * C(N-1, floor(N/2)) * 2^{-(N-1)} > 1.
   - AllC-Hump : the b0-marginalized condition (b0 averaged over Uniform[0,1]).
 
-Both boundaries are closed-form/analytical; the script is self-contained
-(numpy + scipy only) and does not need the convergence database. It reproduces
-``analytical_boundaries.csv``, the input to the Figure 4C panel.
+Both edges use the normalized logistic production (SI Eq. S2; S(0)=0, S(1)=1).
+The script is self-contained (numpy + scipy only) and does not need the
+convergence database. It reproduces ``analytical_boundaries.csv``, the input to
+the Figure 4C panel.
 
 Usage:
     uv run python scripts/compute_critical_K_boundaries.py
@@ -32,7 +35,14 @@ N_ALPHA = 201  # resolution for the delta(alpha) scan
 # --- Production function -----------------------------------------------------
 
 def _sigmoid(c, k, x0=0.5):
-    return 1.0 / (1.0 + np.exp(-k * (c - x0)))
+    # Normalized logistic (SI Eq. S2): S(0)=0, S(1)=1, with a linear fallback
+    # when the raw sigmoid is nearly flat (small K).
+    c = np.asarray(c, dtype=float)
+    s_c = 1.0 / (1.0 + np.exp(-k * (c - x0)))
+    s_0 = 1.0 / (1.0 + np.exp(-k * (0.0 - x0)))
+    s_1 = 1.0 / (1.0 + np.exp(-k * (1.0 - x0)))
+    denom = s_1 - s_0
+    return np.where(denom < 1e-10, c, (s_c - s_0) / denom)
 
 
 def _step(c, x0=0.5):
@@ -94,14 +104,16 @@ def _cH_hump(h, N):
     return (h - 1) / (N - 2 + h)
 
 
-def _S_allH_marginalized(K, x0=0.5):
-    """<S(min(b0, 1-b0); K)> averaged over b0 ~ Uniform[0, 1] (closed form)."""
+def _S_allH_marginalized(K, x0=0.5, n_b0=2001):
+    """<S(min(b0, 1-b0); K)> averaged over b0 ~ Uniform[0, 1].
+
+    Numerical marginalization using the normalized production _sigmoid (SI Eq. S2).
+    """
     if np.isinf(K):
         return 0.0
-    half_K = K / 2.0
-    if half_K > 500:
-        return 0.0
-    return (2.0 / K) * (np.log(2) + half_K - np.log(1.0 + np.exp(half_K)))
+    b0 = np.linspace(0.0, 1.0, n_b0)
+    c = np.minimum(b0, 1.0 - b0)
+    return float(np.mean(_sigmoid(c, K, x0)))
 
 
 def _min_delta_hump_marg(K, N, mpcr=MPCR, x0=0.5):

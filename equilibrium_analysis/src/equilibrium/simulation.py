@@ -25,8 +25,8 @@ STRATEGY_IDS = {"AllC": 0, "AllD": 1, "CC": 2, "H": 3}
 N_STRATEGIES = 4
 DEFAULT_GROUP_SIZE = 4
 DEFAULT_MPCR = 0.4
-DEFAULT_THRESHOLD = 1e-6
-DEFAULT_MAX_ROUNDS = 100
+DEFAULT_THRESHOLD = 1e-2   # SI: converge when max_i |c_i^t - c_i^{t-1}| < 1e-2
+DEFAULT_MAX_ROUNDS = 1000  # SI: max within-group rounds before timeout averaging
 
 # New convergence detection constants
 DEFAULT_CYCLE_DECIMALS = 6  # Decimal places for state hashing
@@ -339,15 +339,17 @@ def simulate_composition(
             'cycle_start': -1
         }
 
-    coop_rates = np.full(N, init_coop)
     strategy_ids = _assign_strategy_ids(n_allc, n_alld, n_cc, n_h)
+    # Strategy-specific initial cooperation: AllC=1, AllD=0 from the start;
+    # CC and Hump start from the common initial belief b0 (= init_coop).
+    coop_rates = np.full(N, init_coop)
+    coop_rates[strategy_ids == 0] = 1.0  # AllC
+    coop_rates[strategy_ids == 1] = 0.0  # AllD
 
-    # State history for cycle detection
+    # State history for cycle detection. The common pre-update state is NOT
+    # registered, so it cannot pollute a detected limit cycle's average.
     state_history = {}
     rate_history = []
-
-    rate_history.append(coop_rates.copy())
-    state_history[tuple(np.round(coop_rates, decimals=cycle_decimals))] = 0
 
     convergence_type = 'timeout'
     cycle_length = 0
@@ -366,12 +368,12 @@ def simulate_composition(
         state_hash = tuple(np.round(coop_rates, decimals=cycle_decimals))
         if state_hash in state_history:
             cycle_start = state_history[state_hash]
-            cycle_length = rounds - cycle_start
+            cycle_length = len(rate_history) - cycle_start
             coop_rates = np.mean(np.array(rate_history[cycle_start:]), axis=0)
             convergence_type = 'limit_cycle'
             break
 
-        state_history[state_hash] = rounds
+        state_history[state_hash] = len(rate_history)
         rate_history.append(coop_rates.copy())
 
     if convergence_type == 'timeout':

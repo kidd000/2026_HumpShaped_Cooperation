@@ -23,6 +23,7 @@ def run_single_round(
     beliefs: np.ndarray,
     group_ids: np.ndarray,
     prev_group_means: np.ndarray,
+    prev_coop_rates: np.ndarray,
     is_first_round: bool,
     K: float,
     x0: float,
@@ -45,6 +46,9 @@ def run_single_round(
         Group membership for all agents (shape: M*N).
     prev_group_means : np.ndarray
         Previous round's group mean cooperation (shape: M).
+    prev_coop_rates : np.ndarray
+        Previous round's individual cooperation rates (shape: M*N).
+        Used to form each agent's leave-one-out reference.
     is_first_round : bool
         Whether this is the first round.
     K : float
@@ -79,9 +83,14 @@ def run_single_round(
             # Use belief as initial reference
             cooperation_rates[i] = get_cooperation_rate(strategies[i], beliefs[i], hump_threshold)
         else:
-            # Use previous group mean
+            # React to the leave-one-out mean of the OTHER N-1 group members.
+            # The production term (Step 3) still uses the full group mean.
             g = group_ids[i]
-            cooperation_rates[i] = get_cooperation_rate(strategies[i], prev_group_means[g], hump_threshold)
+            if N > 1:
+                others_mean = (N * prev_group_means[g] - prev_coop_rates[i]) / (N - 1)
+            else:
+                others_mean = prev_group_means[g]
+            cooperation_rates[i] = get_cooperation_rate(strategies[i], others_mean, hump_threshold)
 
     # Step 2: Compute group means
     group_means = np.zeros(M, dtype=np.float64)
@@ -204,22 +213,23 @@ def run_generation_adiabatic(
     """
     n_total = M * N
 
-    # Initialize group means
+    # Initialize group means and per-agent cooperation rates
     group_means = np.zeros(M, dtype=np.float64)
     prev_group_means = np.zeros(M, dtype=np.float64)
+    prev_coop_rates = np.zeros(n_total, dtype=np.float64)
 
     # Track final round values
     final_coop_rates = np.zeros(n_total, dtype=np.float64)
     final_payoffs = np.zeros(n_total, dtype=np.float64)
 
-    # State history for cycle detection (max_cycle_check x M)
-    state_history = np.zeros((max_cycle_check, M), dtype=np.float64)
-    n_states_stored = 0
-
-    # History for fallback averaging
-    coop_history = np.zeros((fallback_window, n_total), dtype=np.float64)
-    payoff_history = np.zeros((fallback_window, n_total), dtype=np.float64)
-    group_mean_history = np.zeros((fallback_window, M), dtype=np.float64)
+    # Aligned linear history (depth max_cycle_check). Row j holds iteration j's
+    # rounded individual-cooperation state and its raw coop/payoff/group means,
+    # so cycle detection and cycle averaging share one consistent index space.
+    state_history = np.zeros((max_cycle_check, n_total), dtype=np.float64)
+    coop_history = np.zeros((max_cycle_check, n_total), dtype=np.float64)
+    payoff_history = np.zeros((max_cycle_check, n_total), dtype=np.float64)
+    gmean_history = np.zeros((max_cycle_check, M), dtype=np.float64)
+    hist_len = 0
 
     iterations = 0
     convergence_type = CONV_TIMEOUT
@@ -229,26 +239,22 @@ def run_generation_adiabatic(
         is_first = (t == 0)
 
         coop_rates, payoffs, group_means = run_single_round(
-            strategies, beliefs, group_ids, group_means, is_first,
+            strategies, beliefs, group_ids, group_means, prev_coop_rates, is_first,
             K, x0, mpcr, E, N, M, hump_threshold
         )
 
         iterations = t + 1
 
-        # Store in circular buffer for fallback averaging
-        buf_idx = t % fallback_window
-        for i in range(n_total):
-            coop_history[buf_idx, i] = coop_rates[i]
-            payoff_history[buf_idx, i] = payoffs[i]
-        for g in range(M):
-            group_mean_history[buf_idx, g] = group_means[g]
+        # Rounded individual-cooperation state for cycle detection
+        current_state = _round_state(coop_rates, cycle_decimals)
 
         # Check convergence (skip first iteration)
         if t > 0:
-            # Stage 1: Check for exact or threshold convergence
+            # Stage 1: individual-level threshold convergence
+            #   max_i |c_i^t - c_i^{t-1}| < convergence_threshold
             max_change = 0.0
-            for g in range(M):
-                change = abs(group_means[g] - prev_group_means[g])
+            for i in range(n_total):
+                change = abs(coop_rates[i] - prev_coop_rates[i])
                 if change > max_change:
                     max_change = change
 
@@ -259,60 +265,64 @@ def run_generation_adiabatic(
                     final_payoffs[i] = payoffs[i]
                 break
 
-            # Stage 2: Check for limit cycle
-            current_state = _round_state(group_means, cycle_decimals)
-
-            for j in range(n_states_stored):
+            # Stage 2: limit cycle on the individual cooperation vector
+            found = -1
+            for j in range(hist_len):
                 if _states_equal(current_state, state_history[j]):
-                    # Cycle detected!
-                    cycle_length = n_states_stored - j
-                    convergence_type = CONV_LIMIT_CYCLE
-
-                    # Compute cycle average
-                    cycle_start_idx = j
-                    for i in range(n_total):
-                        avg_coop = 0.0
-                        avg_pay = 0.0
-                        for k in range(cycle_length):
-                            hist_idx = (cycle_start_idx + k) % fallback_window
-                            avg_coop += coop_history[hist_idx, i]
-                            avg_pay += payoff_history[hist_idx, i]
-                        final_coop_rates[i] = avg_coop / cycle_length
-                        final_payoffs[i] = avg_pay / cycle_length
-
-                    for g in range(M):
-                        avg_gm = 0.0
-                        for k in range(cycle_length):
-                            hist_idx = (cycle_start_idx + k) % fallback_window
-                            avg_gm += group_mean_history[hist_idx, g]
-                        group_means[g] = avg_gm / cycle_length
+                    found = j
                     break
 
-            if convergence_type == CONV_LIMIT_CYCLE:
+            if found >= 0:
+                # One full period = stored rows found .. hist_len-1
+                cycle_length = hist_len - found
+                convergence_type = CONV_LIMIT_CYCLE
+                for i in range(n_total):
+                    avg_coop = 0.0
+                    avg_pay = 0.0
+                    for k in range(cycle_length):
+                        idx = found + k
+                        avg_coop += coop_history[idx, i]
+                        avg_pay += payoff_history[idx, i]
+                    final_coop_rates[i] = avg_coop / cycle_length
+                    final_payoffs[i] = avg_pay / cycle_length
+                for g in range(M):
+                    avg_gm = 0.0
+                    for k in range(cycle_length):
+                        avg_gm += gmean_history[found + k, g]
+                    group_means[g] = avg_gm / cycle_length
                 break
 
-            # Store current state for future cycle detection
-            if n_states_stored < max_cycle_check:
-                for g in range(M):
-                    state_history[n_states_stored, g] = current_state[g]
-                n_states_stored += 1
+        # Record this iteration into the aligned linear history
+        if hist_len < max_cycle_check:
+            for i in range(n_total):
+                state_history[hist_len, i] = current_state[i]
+                coop_history[hist_len, i] = coop_rates[i]
+                payoff_history[hist_len, i] = payoffs[i]
+            for g in range(M):
+                gmean_history[hist_len, g] = group_means[g]
+            hist_len += 1
 
         # Store for next iteration comparison
         for g in range(M):
             prev_group_means[g] = group_means[g]
+        for i in range(n_total):
+            prev_coop_rates[i] = coop_rates[i]
 
         # Store current values (in case we hit max_iterations)
         for i in range(n_total):
             final_coop_rates[i] = coop_rates[i]
             final_payoffs[i] = payoffs[i]
 
-    # Stage 3: Fallback averaging on timeout
+    # Stage 3: Fallback averaging on timeout (most recent rows of linear history)
     if convergence_type == CONV_TIMEOUT:
-        n_avg = min(iterations, fallback_window)
+        n_avg = min(hist_len, fallback_window)
+        if n_avg < 1:
+            n_avg = 1
+        start = hist_len - n_avg
         for i in range(n_total):
             avg_coop = 0.0
             avg_pay = 0.0
-            for k in range(n_avg):
+            for k in range(start, hist_len):
                 avg_coop += coop_history[k, i]
                 avg_pay += payoff_history[k, i]
             final_coop_rates[i] = avg_coop / n_avg
@@ -320,8 +330,8 @@ def run_generation_adiabatic(
 
         for g in range(M):
             avg_gm = 0.0
-            for k in range(n_avg):
-                avg_gm += group_mean_history[k, g]
+            for k in range(start, hist_len):
+                avg_gm += gmean_history[k, g]
             group_means[g] = avg_gm / n_avg
 
     return final_payoffs, final_coop_rates, group_means, iterations, convergence_type, cycle_length

@@ -25,6 +25,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from scipy.optimize import brentq
 from scipy.stats import binom
 
 # ---------------------------------------------------------------------------
@@ -47,6 +48,7 @@ CSV_COLUMNS = [
     "pi_invader2",
     "is_equilibrium",
     "eq_stable",
+    "alpha_equilibrium",
 ]
 
 
@@ -125,6 +127,11 @@ def compute_edge_AllD_AllC(
     pi_k_hump = 1.0 + MPCR * n * step_function(c_focal_hump, x0) - f_hump
     pi_k_cc = 1.0 + MPCR * n * step_function(c_focal_cc, x0) - c_focal_cc
 
+    def diff_fn(a):
+        """pi_left - pi_right (= pi_AllC - pi_AllD) at arbitrary alpha."""
+        probs = binom.pmf(k_vals, n - 1, a)
+        return float(np.dot(probs, pi_k_allc - pi_k_alld))
+
     rows = []
     for a in alpha_grid:
         probs = binom.pmf(k_vals, n - 1, a)
@@ -154,8 +161,9 @@ def compute_edge_AllD_AllC(
             "pi_invader2": pi_hump,  # invader2 = H
             "is_equilibrium": False,
             "eq_stable": False,
+            "alpha_equilibrium": float("nan"),
         })
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows), diff_fn
 
 
 def _solve_cH_with_AllD(j: int, n: int, b0: float,
@@ -183,14 +191,15 @@ def _solve_cH_cC_with_CC(j: int, n: int, b0: float,
     """Joint iteration when group = 1 CC + j AllC + (N-1-j) Hump.
 
     CC tracks its co-player mean; Humps respond to a mixture that includes
-    the CC's contribution. Iterate jointly from (c_H=min(b0,1-b0), c_CC=0.5).
+    the CC's contribution. Both conditional strategies start from the common
+    initial belief b0 (c_H=min(b0,1-b0) for Hump, c_CC=b0 for CC).
     """
     if n - 1 - j <= 0:
         # No Hump co-players: group = 1 CC + (N-1) AllC => c_CC = j/(N-1) = 1
         c_CC = float(j) / max(n - 1, 1)
         return 0.0, c_CC
     c_H = min(b0, 1.0 - b0)
-    c_CC = 0.5
+    c_CC = b0
     for _ in range(max_iter):
         new_c_CC = (j + (n - 1 - j) * c_H) / (n - 1)
         x_h = (new_c_CC + j + (n - 2 - j) * c_H) / (n - 1)
@@ -253,6 +262,11 @@ def compute_edge_AllC_HS(
     gm_focal_H = (j_vals + (n - j_vals) * c_H_focal_H) / n
     pi_k_H = 1.0 + MPCR * n * step_function(gm_focal_H, x0) - c_H_focal_H
 
+    def diff_fn(a):
+        """pi_left - pi_right (= pi_AllC - pi_Hump) at arbitrary alpha."""
+        probs = binom.pmf(j_vals, n - 1, 1.0 - a)
+        return float(np.dot(probs, pi_k_AllC - pi_k_H))
+
     # --- Invader AllD (iterate Hump c_H per j) ---
     pi_k_AllD_inv = np.zeros(n)
     for idx, j in enumerate(j_vals):
@@ -301,28 +315,31 @@ def compute_edge_AllC_HS(
             "pi_invader2": pi_cc_inv,
             "is_equilibrium": False,
             "eq_stable": False,
+            "alpha_equilibrium": float("nan"),
         })
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows), diff_fn
 
 
 # ---------------------------------------------------------------------------
 # Equilibrium detection (Phase 1-5)
 # ---------------------------------------------------------------------------
 
-def annotate_equilibria(df: pd.DataFrame) -> pd.DataFrame:
-    """Add ``is_equilibrium`` and ``eq_stable`` columns based on sign-change.
+def annotate_equilibria(df: pd.DataFrame, diff_fn=None) -> pd.DataFrame:
+    """Add ``is_equilibrium``, ``eq_stable`` and ``alpha_equilibrium`` columns.
 
-    Equilibrium detection:
-    ``diff = pi_left - pi_right``; a sign change between consecutive alpha
-    points flags an equilibrium at the closer endpoint. Stability: the
-    equilibrium is stable iff ``diff`` transitions from negative to positive
-    (below: right dominates -> alpha grows; above: left dominates -> alpha
-    shrinks).
+    ``diff = pi_left - pi_right``; a sign change between consecutive alpha grid
+    points flags an equilibrium at the closer endpoint (kept for plotting on the
+    grid). Stability: stable iff ``diff`` goes negative -> positive. When
+    ``diff_fn`` (a callable of continuous alpha) is supplied, the equilibrium
+    location is refined by bisection (Brent) within the sign-change bracket and
+    stored in ``alpha_equilibrium`` (otherwise the grid alpha is recorded).
     """
     df = df.copy()
     df["is_equilibrium"] = False
     df["eq_stable"] = False
+    df["alpha_equilibrium"] = float("nan")
 
+    alpha = df["alpha"].to_numpy()
     pi_left = df["pi_left"].to_numpy()
     pi_right = df["pi_right"].to_numpy()
     diff = pi_left - pi_right
@@ -335,6 +352,14 @@ def annotate_equilibria(df: pd.DataFrame) -> pd.DataFrame:
             idx = i if abs(d0) < abs(d1) else i + 1
             df.loc[idx, "is_equilibrium"] = True
             df.loc[idx, "eq_stable"] = bool(d0 < 0 and d1 > 0)
+            a_star = float(alpha[idx])
+            if diff_fn is not None:
+                try:
+                    a_star = float(brentq(diff_fn, alpha[i], alpha[i + 1],
+                                          xtol=1e-10, rtol=1e-12))
+                except ValueError:
+                    a_star = float(alpha[idx])
+            df.loc[idx, "alpha_equilibrium"] = a_star
     return df
 
 
@@ -372,13 +397,13 @@ def main() -> None:
     alpha_grid = np.linspace(0.0, 1.0, args.resolution)
 
     # AllD-AllC edge
-    df_allc_alld = compute_edge_AllD_AllC(alpha_grid, args.N, args.x0)
-    df_allc_alld = annotate_equilibria(df_allc_alld)
+    df_allc_alld, diff_alld = compute_edge_AllD_AllC(alpha_grid, args.N, args.x0)
+    df_allc_alld = annotate_equilibria(df_allc_alld, diff_alld)
     write_csv(df_allc_alld, output_dir, "AllD_AllC", args.N)
 
     # AllC-Hump edge
-    df_allc_hs = compute_edge_AllC_HS(alpha_grid, args.N, args.x0, args.b0)
-    df_allc_hs = annotate_equilibria(df_allc_hs)
+    df_allc_hs, diff_hs = compute_edge_AllC_HS(alpha_grid, args.N, args.x0, args.b0)
+    df_allc_hs = annotate_equilibria(df_allc_hs, diff_hs)
     write_csv(df_allc_hs, output_dir, "AllC_HS", args.N)
 
 
