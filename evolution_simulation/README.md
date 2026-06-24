@@ -26,11 +26,22 @@ function written as `H` in the companion `equilibrium_analysis` package.
 ### Production function
 
 An S-shaped (sigmoid) production function maps the group cooperation rate to
-collective output:
+collective output. The raw logistic is
 
 ```
-S(c) = 1 / (1 + exp(-K (c - x0)))
+S_raw(c) = 1 / (1 + exp(-K (c - x0)))
 ```
+
+and is then rescaled (SI Eq. S2) so that zero cooperation yields zero output and
+full cooperation yields full output:
+
+```
+S(c) = (S_raw(c) - S_raw(0)) / (S_raw(1) - S_raw(0))      # S(0) = 0, S(1) = 1
+```
+
+This normalized `S(c)` is the production function actually used in the code
+(`evolution.production.sigmoid_production`); when the denominator is ~0 (nearly
+flat), it falls back to the linear `S(c) = c`.
 
 - `K`: steepness (larger is more step-like; `inf` gives an exact step function)
 - `x0`: inflection point, fixed at 0.5 in the main model

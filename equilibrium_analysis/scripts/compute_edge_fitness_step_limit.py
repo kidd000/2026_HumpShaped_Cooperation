@@ -201,8 +201,13 @@ def _solve_cH_cC_with_CC(j: int, n: int, b0: float,
     c_H = min(b0, 1.0 - b0)
     c_CC = b0
     for _ in range(max_iter):
+        # Simultaneous (Jacobi) update per the paper Methods: every player
+        # responds to the PREVIOUS round's co-player mean. The CC contribution to
+        # a focal Hump's co-player mean is therefore the previous c_CC, not the
+        # just-updated new_c_CC. (The fixed point is identical; only the
+        # transient path differs from a sequential/Gauss-Seidel update.)
         new_c_CC = (j + (n - 1 - j) * c_H) / (n - 1)
-        x_h = (new_c_CC + j + (n - 2 - j) * c_H) / (n - 1)
+        x_h = (c_CC + j + (n - 2 - j) * c_H) / (n - 1)
         new_c_H = x_h if x_h <= 0.5 else 1.0 - x_h
         if abs(new_c_H - c_H) < tol and abs(new_c_CC - c_CC) < tol:
             return float(new_c_H), float(new_c_CC)

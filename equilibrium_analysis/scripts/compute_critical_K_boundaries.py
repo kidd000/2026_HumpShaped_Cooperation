@@ -161,13 +161,18 @@ def compute_boundaries(n_max=50):
         k_star = critical_K_alld(n) if _pivotal_factor_alld(n) > 1.0 else np.nan
         if n >= 11 and not np.isnan(k_star):
             rows.append({"N": n, "K_critical": float(k_star), "edge_type": "AllC-AllD"})
-    # AllC-Hump (b0-marginalized): defined for all N; clamp nan to K_LO = 1
-    # (an equilibrium exists for any K there).
+    # AllC-Hump (b0-marginalized). critical_K_hump_marg returns:
+    #   k_lo (=1) when an equilibrium already exists at the smallest K, or
+    #   NaN    when no equilibrium exists anywhere in [k_lo, k_hi].
+    # The NaN case must stay NaN (no equilibrium in range) -- it must NOT be
+    # clamped to K_LO=1, which would falsely assert that an equilibrium exists
+    # for any K. (Matches scripts/theory/compute_critical_K_boundary.py.)
     for n in range(3, n_max + 1):
         k_star = critical_K_hump_marg(n)
         if np.isnan(k_star):
-            k_star = 1.0
-        rows.append({"N": n, "K_critical": float(k_star), "edge_type": "AllC-Hump"})
+            rows.append({"N": n, "K_critical": np.nan, "edge_type": "AllC-Hump"})
+        else:
+            rows.append({"N": n, "K_critical": float(k_star), "edge_type": "AllC-Hump"})
     return pd.DataFrame(rows, columns=["N", "K_critical", "edge_type"])
 
 

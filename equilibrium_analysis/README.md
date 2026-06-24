@@ -32,12 +32,18 @@ rate `x`:
 ### Production and payoff
 
 The collective output is an S-shaped function of the group cooperation rate
-`c_bar`, and payoffs are ratio-based:
+`c_bar`, and payoffs are ratio-based. The raw logistic is rescaled (SI Eq. S2)
+so that `S(0) = 0` and `S(1) = 1`:
 
 ```
-S(c) = 1 / (1 + exp(-K (c - x0)))           # x0 = 0.5 in the main model
-pi_i = E (1 + MPCR * S(c_bar) * N - c_i)     # E = 1, MPCR = 0.4
+S_raw(c) = 1 / (1 + exp(-K (c - x0)))                       # x0 = 0.5 in the main model
+S(c)     = (S_raw(c) - S_raw(0)) / (S_raw(1) - S_raw(0))    # normalized: S(0)=0, S(1)=1
+pi_i     = E (1 + MPCR * S(c_bar) * N - c_i)                # E = 1, MPCR = 0.4
 ```
+
+This normalized `S(c)` is the production function used throughout the code
+(`equilibrium.simulation.supply_sigmoid`); it falls back to the linear `S(c) = c`
+when the denominator is ~0 (nearly flat).
 
 ### Focal-player (pivotal) expected payoffs
 

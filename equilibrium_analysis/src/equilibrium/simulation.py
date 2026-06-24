@@ -348,8 +348,12 @@ def simulate_composition(
 
     # State history for cycle detection. The common pre-update state is NOT
     # registered, so it cannot pollute a detected limit cycle's average.
+    # payoff_history is kept aligned with rate_history (payoff_history[j] is the
+    # payoff vector of rate_history[j]) so that limit-cycle / timeout fitness can
+    # average per-step payoffs rather than recomputing S at the mean cooperation.
     state_history = {}
     rate_history = []
+    payoff_history = []
 
     convergence_type = 'timeout'
     cycle_length = 0
@@ -369,18 +373,32 @@ def simulate_composition(
         if state_hash in state_history:
             cycle_start = state_history[state_hash]
             cycle_length = len(rate_history) - cycle_start
-            coop_rates = np.mean(np.array(rate_history[cycle_start:]), axis=0)
             convergence_type = 'limit_cycle'
             break
 
         state_history[state_hash] = len(rate_history)
         rate_history.append(coop_rates.copy())
+        payoff_history.append(
+            _compute_group_payoffs_from_rates(coop_rates, k, x0, mpcr)
+        )
 
-    if convergence_type == 'timeout':
+    # Fitness evaluation per SI Sec. 2. Production S is nonlinear, so we average
+    # per-step payoffs over the relevant window, NOT S(mean(c)).
+    #   (i) exact      -> payoff at the terminal step
+    #   (ii) cycle     -> payoffs averaged over one full period
+    #   (iii) timeout  -> payoffs averaged over the final `fallback_window` steps
+    if convergence_type == 'limit_cycle':
+        coop_rates = np.mean(np.array(rate_history[cycle_start:]), axis=0)
+        payoffs = np.mean(np.array(payoff_history[cycle_start:]), axis=0)
+    elif convergence_type == 'timeout':
         window = min(fallback_window, len(rate_history))
-        coop_rates = np.mean(np.array(rate_history[-window:]), axis=0)
-
-    payoffs = _compute_group_payoffs_from_rates(coop_rates, k, x0, mpcr)
+        if window < 1:
+            payoffs = _compute_group_payoffs_from_rates(coop_rates, k, x0, mpcr)
+        else:
+            coop_rates = np.mean(np.array(rate_history[-window:]), axis=0)
+            payoffs = np.mean(np.array(payoff_history[-window:]), axis=0)
+    else:  # exact
+        payoffs = _compute_group_payoffs_from_rates(coop_rates, k, x0, mpcr)
 
     return {
         'final_rates': coop_rates,
